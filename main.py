@@ -1,33 +1,86 @@
-import requests
+import os
+import subprocess
+from telegram import Update
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
-# Замените эти переменные вашими собственными данными
-client_id = "YOUR_CLIENT_ID"
-client_secret = "YOUR_CLIENT_SECRET"
+# вставь сюда свой токен бота
+TOKEN = "8682705497:AAHSE1E9GoDUd3B_ry57v4evS_nvB0-h7zA"
 
-# Получаем токен доступа
-auth_url = "https://secure.soundcloud.com/oauth/token"
-auth_data = {
-    "grant_type": "client_credentials",
-    "client_id": client_id,
-    "client_secret": client_secret
-}
+DOWNLOAD_DIR = "downloads"
+os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
-response = requests.post(auth_url, data=auth_data)
-access_token = response.json()["access_token"]
 
-# Теперь ищем треки
-search_url = "https://api.soundcloud.com/tracks"
-params = {
-    "q": "название песни",
-    "limit": 10  # количество результатов
-}
+def clear_downloads():
+    for f in os.listdir(DOWNLOAD_DIR):
+        path = os.path.join(DOWNLOAD_DIR, f)
+        if os.path.isfile(path):
+            os.remove(path)
 
-headers = {
-    "Authorization": f"OAuth {access_token}"
-}
 
-search_response = requests.get(search_url, params=params, headers=headers)
-tracks = search_response.json()
+def download_track(query):
 
-for track in tracks["collection"]:
-    print(track["title"])
+    clear_downloads()
+
+    cmd = [
+        "scdl",
+        "-s", query,
+        "--path", DOWNLOAD_DIR,
+        "--onlymp3",
+        "--no-playlist"
+    ]
+
+    subprocess.run(cmd)
+
+    files = os.listdir(DOWNLOAD_DIR)
+
+    if not files:
+        return None
+
+    return os.path.join(DOWNLOAD_DIR, files[0])
+
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "🎵 SoundCloud MP3 бот\n\n"
+        "Использование:\n"
+        "/search название трека"
+    )
+
+
+async def search(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    if not context.args:
+        await update.message.reply_text("Использование: /search название трека")
+        return
+
+    query = " ".join(context.args)
+
+    await update.message.reply_text("🔎 Ищу и скачиваю трек...")
+
+    file_path = download_track(query)
+
+    if not file_path:
+        await update.message.reply_text("❌ Трек не найден")
+        return
+
+    await update.message.reply_audio(
+        audio=open(file_path, "rb")
+    )
+
+    os.remove(file_path)
+
+
+def main():
+
+    app = ApplicationBuilder().token(TOKEN).build()
+
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("search", search))
+
+    print("Bot started")
+
+    app.run_polling()
+
+
+if __name__ == "__main__":
+    main()
